@@ -405,13 +405,188 @@ humanshaders-web/
 
 ---
 
+## 10. Gap Analysis: Existing Three.js vs HumanShaders
+
+### 10.1 Existing Three.js Resources (Lee Perry-Smith / Infinite Head)
+
+Three.js already includes the **Infinite head scan** (same model used in HumanShaders) with several examples:
+
+#### Available Assets in Three.js (`examples/models/gltf/LeePerrySmith/`)
+| File | Description |
+|------|-------------|
+| `LeePerrySmith.glb` | 3D head model (GLTF binary) |
+| `Map-COL.jpg` | Diffuse/albedo texture |
+| `Map-SPEC.jpg` | Specular map |
+| `Infinite-Level_02_Tangent_SmoothUV.jpg` | Normal map |
+| `Infinite-Level_02_Disp_NoSmoothUV-4096.jpg` | Displacement map (4K) |
+
+#### Existing Three.js Examples
+
+1. **[webgl_materials_normalmap](https://threejs.org/examples/webgl_materials_normalmap.html)**
+   - `MeshPhongMaterial` with normal mapping
+   - Post-processing: Bleach bypass, color correction, FXAA
+   - Basic specular highlights
+
+2. **[webgl_materials_subsurface_scattering](https://threejs.org/examples/webgl_materials_subsurface_scattering.html)**
+   - Uses `SubsurfaceScatteringShader.js` (GDC 2011 technique)
+   - Thickness-based translucency
+   - Parameters: distortion, ambient, attenuation, power, scale
+
+3. **[AlteredQualia Skin Demo](https://alteredqualia.com/three/examples/webgl_materials_skin.html)** (external)
+   - `THREE.ShaderSkin` specialized shader
+   - Multi-pass bloom
+   - Beckmann distribution for specular
+
+### 10.2 Feature Gap Analysis
+
+| Feature | Three.js Has | HumanShaders Has | Gap |
+|---------|--------------|------------------|-----|
+| **Model** | ✓ Infinite head | ✓ Infinite + Emily | Model available |
+| **Diffuse Texture** | ✓ Map-COL.jpg | ✓ Higher quality | Minor |
+| **Normal Map** | ✓ Basic tangent | ✓ Multi-layer LOD | **Significant** |
+| **Specular** | ✓ Basic Phong/GGX | ✓ Double GGX | Moderate |
+| **SSS - Thickness** | ✓ Basic translucency | ✓ Multi-layer wrapped | **Significant** |
+| **SSS - Noise Dithering** | ✗ | ✓ Interleaved gradient | **Missing** |
+| **Micro-Detail Normals** | ✗ | ✓ 25-50x tiled overlay | **Missing** |
+| **Micro-Detail AO** | ✗ | ✓ Overlay blend | **Missing** |
+| **Translucency Gradient** | ✗ | ✓ Color LUT | **Missing** |
+| **Light Warping** | ✗ | ✓ Optional LUT | **Missing** |
+| **Tinted Shadow Penumbra** | ✗ | ✓ RGB overlay | **Missing** |
+| **Eye Shader** | ✗ | ✓ Full iris/sclera | **Missing entirely** |
+| **Eye Parallax** | ✗ | ✓ Heightmap-based | **Missing entirely** |
+| **Eye Wetness** | ✗ | ✓ Screen-space blur | **Missing entirely** |
+
+### 10.3 What's Missing - Detailed Breakdown
+
+#### Critical Gaps (Required for parity)
+
+1. **Multi-layer Normal SSS** (~200 lines)
+   - Three.js SSS uses thickness map only
+   - HumanShaders samples normal at 3 LOD levels per-channel (R/G/B)
+   - Creates realistic light wrap around surface detail
+   ```
+   Effort: High - Core differentiator of skin quality
+   ```
+
+2. **Micro-Detail System** (~50 lines)
+   - High-frequency normal tiling (25-50x UV scale)
+   - AO overlay for pore-level detail
+   - Critical for close-up realism
+   ```
+   Effort: Medium - Straightforward to implement
+   ```
+
+3. **Eye Rendering System** (~180 lines)
+   - Dual-texture iris/sclera blend
+   - Parallax depth for iris
+   - Custom Fresnel calculation
+   - SSS for sclera translucency
+   ```
+   Effort: High - Completely new system
+   ```
+
+#### Nice-to-Have Gaps
+
+4. **Translucency Color Gradient** (~30 lines)
+   - LUT-based color lookup for backlit areas
+   - Ears, nose, thin skin areas
+   ```
+   Effort: Low
+   ```
+
+5. **Eye Wetness Effect** (~100 lines)
+   - Screen-space blur with emission
+   - Micro-detail modulation
+   ```
+   Effort: Medium
+   ```
+
+6. **SSS Noise Dithering** (~20 lines)
+   - Breaks up banding in SSS
+   - Animated interleaved gradient noise
+   ```
+   Effort: Low
+   ```
+
+### 10.4 Revised Effort Estimate
+
+Given existing Three.js foundation:
+
+| Task | From Scratch | Using Three.js Base |
+|------|--------------|---------------------|
+| PBR Foundation | 1-2 weeks | **Already done** ✓ |
+| Basic SSS | 1 week | **Partially done** ✓ |
+| Multi-layer Normal SSS | 2 weeks | 1-2 weeks |
+| Micro-detail System | 1 week | 3-4 days |
+| Eye Shader | 2 weeks | 1-2 weeks |
+| Eye Wetness | 1 week | 3-4 days |
+| Polish & iOS Testing | 2 weeks | 1-2 weeks |
+| **Total** | **7-10 weeks** | **4-6 weeks** |
+
+### 10.5 Recommended Starting Point
+
+```javascript
+// Start from Three.js SSS example and extend:
+import { SubsurfaceScatteringShader } from 'three/examples/jsm/shaders/SubsurfaceScatteringShader.js';
+
+// Key modifications needed:
+// 1. Replace thickness-based SSS with multi-layer normal sampling
+// 2. Add micro-detail normal/AO texture inputs
+// 3. Implement wrapped diffuse per-channel (R/G/B smoothstep)
+// 4. Add translucency color LUT sampling
+```
+
+### 10.6 Three.js SSS Shader Comparison
+
+**Current Three.js SSS (`SubsurfaceScatteringShader.js`):**
+- Based on GDC 2011 "Approximating Translucency" talk
+- Uses thickness map for light transmission
+- Single-pass forward rendering
+- Good for general translucent materials (wax, jade, etc.)
+
+**HumanShaders SSS Approach:**
+- Multi-layer normal sampling at different LOD levels
+- Per-channel (R/G/B) wrapped diffuse with different falloffs
+- Simulates wavelength-dependent scattering depth
+- Optimized specifically for human skin
+
+**Key Algorithmic Difference:**
+```glsl
+// Three.js SSS (thickness-based):
+float scatter = pow(saturate(dot(viewDir, -lightDir)), thicknessPower)
+              * thicknessScale * thickness;
+
+// HumanShaders SSS (normal-based):
+vec3 dn_r = normalLod(uv, 1.0 * smoothness);  // Red scatters deepest
+vec3 dn_g = normalLod(uv, 0.8 * smoothness);  // Green medium
+vec3 dn_b = normalLod(uv, 0.7 * smoothness);  // Blue shallowest
+vec3 scatter = vec3(
+    smoothstep(0.40, 1.2, wrap(dn_r, light)),
+    smoothstep(0.425, 1.2, wrap(dn_g, light)),
+    smoothstep(0.44, 1.2, wrap(dn_b, light))
+);
+```
+
+---
+
 ## Appendix A: Reference Resources
 
+### Three.js Examples (Starting Points)
+- [Three.js Normal Map Demo](https://threejs.org/examples/webgl_materials_normalmap.html) - Lee Perry-Smith head with basic normal mapping
+- [Three.js SSS Demo](https://threejs.org/examples/webgl_materials_subsurface_scattering.html) - Thickness-based subsurface scattering
+- [AlteredQualia Skin Demo](https://alteredqualia.com/three/examples/webgl_materials_skin.html) - Advanced skin shader with bloom
+- [Three.js Modified Materials](https://threejs.org/examples/webgl_materials_modified.html) - Custom material modification patterns
+
+### Documentation
 - [Three.js Custom Materials](https://threejs.org/docs/#api/en/materials/ShaderMaterial)
 - [WebGPU Fundamentals](https://webgpufundamentals.org/)
-- [Pre-Integrated Skin Shading Paper](https://developer.nvidia.com/gpugems/gpugems3/part-iii-rendering/chapter-14-advanced-techniques-realistic-real-time-skin)
 - [iOS WebGL Best Practices](https://developer.apple.com/documentation/webgl)
 - [ASTC Texture Compression](https://developer.arm.com/documentation/102162/latest/)
+
+### Research Papers & Techniques
+- [Pre-Integrated Skin Shading (GPU Gems 3)](https://developer.nvidia.com/gpugems/gpugems3/part-iii-rendering/chapter-14-advanced-techniques-realistic-real-time-skin)
+- [GDC 2011 - Approximating Translucency](https://colinbarrebrisebois.com/2011/03/07/gdc-2011-approximating-translucency-for-a-fast-cheap-and-convincing-subsurface-scattering-look/) - Basis for Three.js SSS
+- [Screen-Space SSS Discussion](https://discourse.threejs.org/t/skin-shading-with-screen-space-sub-surface-scattering/83939) - Three.js forum
 
 ## Appendix B: iOS Device GPU Capabilities
 
