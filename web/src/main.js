@@ -12,6 +12,8 @@ const CONFIG = {
     // Use Three.js CDN for the Lee Perry-Smith model
     modelUrl: 'https://threejs.org/examples/models/gltf/LeePerrySmith/LeePerrySmith.glb',
     textureBaseUrl: 'https://threejs.org/examples/models/gltf/LeePerrySmith/',
+    // Local micro-detail textures
+    microDetailUrl: './textures/skin_micro_nrm_ao.png',
 };
 
 // Global state
@@ -19,6 +21,7 @@ let renderer, scene, camera, controls;
 let skinMaterial;
 let mainLight, ambientLight;
 let gui;
+let microDetailTexture = null;
 
 // Texture loader
 const textureLoader = new THREE.TextureLoader();
@@ -90,52 +93,63 @@ async function init() {
     window.addEventListener('resize', onResize);
 }
 
+// Load texture helper
+function loadTexture(url, colorSpace = THREE.LinearSRGBColorSpace) {
+    return new Promise((resolve) => {
+        textureLoader.load(
+            url,
+            (texture) => {
+                texture.colorSpace = colorSpace;
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.RepeatWrapping;
+                texture.flipY = false;
+                resolve(texture);
+            },
+            undefined,
+            () => resolve(null)
+        );
+    });
+}
+
 // Load the Lee Perry-Smith head model
 async function loadHeadModel() {
     const progressBar = document.getElementById('progress-bar');
 
-    // Load textures
-    const loadTexture = (name) => {
-        return new Promise((resolve) => {
-            textureLoader.load(
-                CONFIG.textureBaseUrl + name,
-                (texture) => {
-                    texture.colorSpace = name.includes('COL') ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
-                    texture.flipY = false;
-                    resolve(texture);
-                },
-                undefined,
-                () => resolve(null)
-            );
-        });
-    };
-
-    progressBar.style.width = '20%';
+    progressBar.style.width = '10%';
 
     // Load textures in parallel
-    const [albedoMap, normalMap, specMap] = await Promise.all([
-        loadTexture('Map-COL.jpg'),
-        loadTexture('Infinite-Level_02_Tangent_SmoothUV.jpg'),
-        loadTexture('Map-SPEC.jpg'),
+    const [albedoMap, normalMap, specMap, microDetail] = await Promise.all([
+        loadTexture(CONFIG.textureBaseUrl + 'Map-COL.jpg', THREE.SRGBColorSpace),
+        loadTexture(CONFIG.textureBaseUrl + 'Infinite-Level_02_Tangent_SmoothUV.jpg'),
+        loadTexture(CONFIG.textureBaseUrl + 'Map-SPEC.jpg'),
+        loadTexture(CONFIG.microDetailUrl),
     ]);
+
+    microDetailTexture = microDetail;
 
     progressBar.style.width = '50%';
 
-    // Create skin material
+    // Create skin material with micro-detail enabled
     skinMaterial = new SkinMaterial({
         albedo: 0xffeedd,
         albedoMap: albedoMap,
         normalMap: normalMap,
-        roughnessMap: specMap, // Use spec map inverted as roughness approximation
+        roughnessMap: specMap,
         roughness: 0.5,
         normalStrength: 1.0,
+        // SSS settings
         useSSS: true,
         sssStrength: 0.4,
         skinSmoothness: 5.0,
         skinFalloff: 1.0,
         sssColor: 0xffccaa,
         doubleSpecularity: true,
-        useMicroDetail: false,
+        // Micro-detail settings
+        useMicroDetail: microDetail !== null,
+        microDetailMap: microDetail,
+        microDetailScale: 50.0,
+        microNormalStrength: 0.3,
+        microAoStrength: 0.15,
     });
 
     progressBar.style.width = '70%';
@@ -171,7 +185,7 @@ async function loadHeadModel() {
 
                 model.scale.setScalar(scale);
                 model.position.sub(center.multiplyScalar(scale));
-                model.position.y -= 0.2; // Slight adjustment
+                model.position.y -= 0.2;
 
                 scene.add(model);
                 resolve(model);
@@ -201,6 +215,13 @@ function setupGUI() {
             skinMaterial.uniforms.uSssColor.value.set(value);
         });
     sssFolder.open();
+
+    // Micro-detail folder
+    const microFolder = gui.addFolder('Micro Detail');
+    microFolder.add(skinMaterial.uniforms.uUseMicroDetail, 'value').name('Enable');
+    microFolder.add(skinMaterial.uniforms.uMicroDetailScale, 'value', 10, 100).name('Scale');
+    microFolder.add(skinMaterial.uniforms.uMicroNormalStrength, 'value', 0, 1).name('Normal Strength');
+    microFolder.add(skinMaterial.uniforms.uMicroAoStrength, 'value', 0, 1).name('AO Strength');
 
     // Material folder
     const matFolder = gui.addFolder('Material');
