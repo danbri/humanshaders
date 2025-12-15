@@ -3,7 +3,7 @@ import glsl from 'vite-plugin-glsl';
 
 export default defineConfig({
   plugins: [glsl()],
-  base: './',
+  base: '/humanshaders/',
   build: {
     outDir: 'dist',
     assetsDir: 'assets'
