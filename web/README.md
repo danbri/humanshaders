@@ -80,3 +80,7 @@ irisUv = clamp(irisUv - parallaxOffset, 0.0, 1.0);
 - Original HumanShaders by [MatMADNESS](https://github.com/matmadness/HumanShaders)
 - Lee Perry-Smith head scan (CC BY 3.0)
 - Three.js for WebGL abstraction
+
+## Live Demo
+
+https://danbri.github.io/humanshaders/
